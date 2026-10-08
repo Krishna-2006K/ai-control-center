@@ -159,7 +159,7 @@ def api_list_sessions(project_id: str) -> dict[str, list[dict]]:
 @app.post("/api/projects/{project_id}/evidence", status_code=201)
 def api_create_evidence(project_id: str, payload: EvidenceCreate) -> dict:
     require_project(project_id)
-    return create_evidence(project_id=project_id, **payload.model_dump())
+    return create_evidence(project_id, **payload.model_dump())
 
 
 @app.get("/api/projects/{project_id}/evidence")
@@ -172,7 +172,7 @@ def api_list_evidence(project_id: str) -> dict[str, list[dict]]:
 def api_create_decision(project_id: str, payload: DecisionCreate) -> dict:
     require_project(project_id)
     try:
-        return create_decision(project_id=project_id, **payload.model_dump())
+        return create_decision(project_id, **payload.model_dump())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
