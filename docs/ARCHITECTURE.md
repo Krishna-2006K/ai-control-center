@@ -56,3 +56,20 @@ A user should eventually be able to answer, for any project:
 - Replacing Notion
 - Complex multi-user deployment
 - Cloud infrastructure
+
+## 8. Phase 2 workflow
+
+The first usable application workflow is deliberately manual and local:
+
+```text
+Create Project
+    -> Record AI Session
+    -> Update Project State
+    -> Record Evidence
+    -> Record Decision
+    -> Generate Handoff
+```
+
+The Handoff is a canonical snapshot generated from AICC project state plus recorded sessions, evidence, and decisions. It answers four questions: where I was, what changed, which AI worked on it, and what to do next.
+
+No provider API, browser automation, Notion synchronization, or conversation importer is required for this workflow.
