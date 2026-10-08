@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AICC — AI Control Center</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; color: #18212b; background: #f6f7f9; }
+    body { margin: 0; }
+    header { padding: 20px 28px; background: #18212b; color: white; }
+    main { max-width: 1100px; margin: 24px auto; padding: 0 18px; }
+    section, .card { background: white; border: 1px solid #dfe3e8; border-radius: 12px; padding: 18px; margin-bottom: 16px; }
+    form { display: grid; gap: 10px; }
+    input, textarea, select, button { font: inherit; padding: 9px 10px; border: 1px solid #c9ced6; border-radius: 8px; box-sizing: border-box; }
+    textarea { min-height: 80px; resize: vertical; }
+    button { cursor: pointer; background: #18212b; color: white; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+    .muted { color: #66717f; }
+    .error { color: #a22; margin-top: 8px; }
+    .success { color: #176b3a; margin-top: 8px; }
+    .handoff { border-left: 5px solid #18212b; padding-left: 14px; }
+    .item { border-top: 1px solid #eceff2; padding: 10px 0; }
+    a { color: inherit; }
+  </style>
+</head>
+<body>
+<header><strong>AICC</strong> — AI Control Center</header>
+<main>
+  <section>
+    <h2>Projects</h2>
+    <form id="project-form">
+      <input id="project-name" placeholder="Project name" required>
+      <textarea id="project-state" placeholder="Where are you now? Current state"></textarea>
+      <input id="project-next" placeholder="What should happen next?">
+      <button>Create project</button>
+    </form>
+    <div id="project-message"></div>
+    <div id="projects"></div>
+  </section>
+  <section id="workspace" hidden>
+    <h2 id="workspace-title"></h2>
+    <p><strong>Current state:</strong> <span id="state"></span></p>
+    <p><strong>Next action:</strong> <span id="next"></span></p>
+    <div class="grid">
+      <div class="card">
+        <h3>Update project state</h3>
+        <form id="update-form">
+          <textarea id="update-state" placeholder="Current state"></textarea>
+          <input id="update-next" placeholder="Next action">
+          <select id="update-status"><option value="not_started">Not started</option><option value="in_progress">In progress</option><option value="done">Done</option></select>
+          <button>Save state</button>
+        </form>
+      </div>
+      <div class="card">
+        <h3>AI session</h3>
+        <form id="session-form">
+          <select id="session-provider"><option>Claude</option><option>GPT</option><option>Other</option></select>
+          <input id="session-account" placeholder="AI account ID (optional)">
+          <select id="session-source"><option>Manual</option><option>Export</option><option>Local</option><option>Imported</option></select>
+          <textarea id="session-summary" placeholder="What did the AI work on?"></textarea>
+          <input id="session-date" type="datetime-local">
+          <button>Record session</button>
+        </form>
+      </div>
+      <div class="card">
+        <h3>Evidence</h3>
+        <form id="evidence-form">
+          <input id="evidence-type" placeholder="Type (Git, Markdown, File...)" required>
+          <input id="evidence-location" placeholder="Source location">
+          <textarea id="evidence-notes" placeholder="What does this evidence show?"></textarea>
+          <button>Record evidence</button>
+        </form>
+      </div>
+      <div class="card">
+        <h3>Decision</h3>
+        <form id="decision-form">
+          <input id="decision-title" placeholder="Decision title" required>
+          <textarea id="decision-text" placeholder="Decision" required></textarea>
+          <textarea id="decision-rationale" placeholder="Rationale"></textarea>
+          <select id="decision-confidence"><option>unverified</option><option>tentative</option><option>confirmed</option></select>
+          <input id="decision-evidence" placeholder="Evidence ID (optional)">
+          <button>Record decision</button>
+        </form>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Latest handoff</h3>
+      <button id="handoff-button">Generate handoff</button>
+      <div id="handoff"></div>
+    </div>
+    <div class="grid">
+      <div class="card"><h3>Sessions</h3><div id="sessions"></div></div>
+      <div class="card"><h3>Evidence</h3><div id="evidence"></div></div>
+      <div class="card"><h3>Decisions</h3><div id="decisions"></div></div>
+    </div>
+  </section>
+</main>
+<script>
+let currentProject = null;
+const $ = id => document.getElementById(id);
+async function api(path, options={}) {
+  const response = await fetch(path, {headers: {"Content-Type":"application/json"}, ...options});
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail || "Request failed");
+  return data;
+}
+function showMessage(id, message, error=false) {
+  $(id).textContent = message;
+  $(id).className = error ? "error" : "success";
+}
+async function loadProjects() {
+  const data = await api("/api/projects");
+  $("projects").innerHTML = data.projects.map(p =>
+    '<div class="item"><a href="#" onclick="selectProject(\''+p.id+'\');return false;"><strong>'+escapeHtml(p.name)+'</strong></a> — '+escapeHtml(p.status)+'</div>'
+  ).join("") || '<p class="muted">No projects yet.</p>';
+}
+async function selectProject(id) {
+  const data = await api("/api/projects/"+id);
+  currentProject = data.project;
+  $("workspace").hidden = false;
+  $("workspace-title").textContent = currentProject.name;
+  $("state").textContent = currentProject.current_state || "Not recorded";
+  $("next").textContent = currentProject.next_action || "Not recorded";
+  $("update-state").value = currentProject.current_state || "";
+  $("update-next").value = currentProject.next_action || "";
+  $("update-status").value = currentProject.status;
+  renderList("sessions", data.sessions, x => (x.provider+" — "+(x.summary||"") ));
+  renderList("evidence", data.evidence, x => x.evidence_type+" — "+(x.notes||"") );
+  renderList("decisions", data.decisions, x => x.title+" — "+x.decision);
+  renderHandoff(data.handoff);
+}
+function renderList(id, items, formatter) {
+  $(id).innerHTML = items.map(x => '<div class="item"><small>'+escapeHtml(x.id)+'</small><br>'+escapeHtml(formatter(x))+'</div>').join("") || '<p class="muted">None recorded.</p>';
+}
+function renderHandoff(h) {
+  $("handoff").innerHTML = h ? '<div class="handoff">'+
+    '<p><strong>Where was I?</strong><br>'+escapeHtml(h.where_i_was)+'</p>'+
+    '<p><strong>What changed?</strong><br>'+escapeHtml(h.what_changed)+'</p>'+
+    '<p><strong>Which AI worked on it?</strong><br>'+escapeHtml(h.which_ai_worked_on_it)+'</p>'+
+    '<p><strong>What should I do next?</strong><br>'+escapeHtml(h.what_to_do_next)+'</p>'+
+    '</div>' : '<p class="muted">No handoff generated yet.</p>';
+}
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+$("project-form").onsubmit = async e => {
+  e.preventDefault();
+  try {
+    const p = await api("/api/projects", {method:"POST", body:JSON.stringify({name:$("project-name").value,current_state:$("project-state").value||null,next_action:$("project-next").value||null})});
+    showMessage("project-message","Project created.");
+    e.target.reset(); await loadProjects(); await selectProject(p.id);
+  } catch(err) { showMessage("project-message",err.message,true); }
+};
+$("update-form").onsubmit = async e => {
+  e.preventDefault();
+  try { await api("/api/projects/"+currentProject.id,{method:"PATCH",body:JSON.stringify({current_state:$("update-state").value,next_action:$("update-next").value,status:$("update-status").value})}); await selectProject(currentProject.id); }
+  catch(err) { alert(err.message); }
+};
+$("session-form").onsubmit = async e => {
+  e.preventDefault();
+  try { await api("/api/projects/"+currentProject.id+"/sessions",{method:"POST",body:JSON.stringify({provider:$("session-provider").value,account_id:$("session-account").value||null,source_type:$("session-source").value,summary:$("session-summary").value||null,session_date:$("session-date").value||null})}); e.target.reset(); await selectProject(currentProject.id); }
+  catch(err) { alert(err.message); }
+};
+$("evidence-form").onsubmit = async e => {
+  e.preventDefault();
+  try { await api("/api/projects/"+currentProject.id+"/evidence",{method:"POST",body:JSON.stringify({evidence_type:$("evidence-type").value,source_location:$("evidence-location").value||null,notes:$("evidence-notes").value||null})}); e.target.reset(); await selectProject(currentProject.id); }
+  catch(err) { alert(err.message); }
+};
+$("decision-form").onsubmit = async e => {
+  e.preventDefault();
+  try { await api("/api/projects/"+currentProject.id+"/decisions",{method:"POST",body:JSON.stringify({title:$("decision-title").value,decision:$("decision-text").value,rationale:$("decision-rationale").value||null,confidence:$("decision-confidence").value,evidence_id:$("decision-evidence").value||null})}); e.target.reset(); await selectProject(currentProject.id); }
+  catch(err) { alert(err.message); }
+};
+$("handoff-button").onclick = async () => {
+  try { const h = await api("/api/projects/"+currentProject.id+"/handoff",{method:"POST"}); renderHandoff(h); }
+  catch(err) { alert(err.message); }
+};
+loadProjects().catch(err => showMessage("project-message", err.message, true));
+</script>
+</body>
+</html>
